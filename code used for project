@@ -1,0 +1,123 @@
+// PID constants
+float Kp = 12.0;
+float Ki = 0;
+float Kd = 16.0;
+
+// PID variables
+float error = 0;
+float previousError = 0;
+float integral = 0;
+float derivative = 0;
+float output = 0;
+
+// Servo level position
+const int LEVEL = 90;
+
+#include <Servo.h>
+
+Servo beamServo;
+
+const int trigPin1 = 7;
+const int echoPin1 = 6;
+
+const int trigPin2 = 4;
+const int echoPin2 = 3;
+
+void setup() {
+  Serial.begin(9600);
+
+  beamServo.attach(9);
+  beamServo.write(90);    // Level beam
+
+  pinMode(trigPin1, OUTPUT);
+  pinMode(echoPin1, INPUT);
+
+  pinMode(trigPin2, OUTPUT);
+  pinMode(echoPin2, INPUT);
+}
+
+float readDistance(int trigPin, int echoPin) {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH, 30000);
+
+  if (duration == 0) return -1;
+
+  return (duration * 0.0135) / 2.0;   // inches
+}
+
+void loop() {
+
+  float sensor1 = readDistance(trigPin1, echoPin1);
+  float sensor2 = readDistance(trigPin2, echoPin2);
+
+  // Calculate error
+  error = (sensor2 - 0.4) - sensor1;
+
+  // Dead zone
+  if (abs(error) < 0.5) {
+    integral = 0;
+    beamServo.write(LEVEL);
+  }
+  else {
+
+    // Integral term
+    integral += error;
+
+    // Prevent integral windup
+    integral = constrain(integral, -30, 30);
+
+    // Derivative term
+    derivative = error - previousError;
+
+    // PID output
+    output = Kp * error + Ki * integral + Kd * derivative;
+
+    int servoAngle = LEVEL + output;
+
+    // ONLY CHANGE: minimum angle now scales back as cart approaches target
+    // Far (>3 in): full minimum angle — needs strong push to get moving
+    // Medium (1.5–3 in): reduced minimum angle — enough to keep moving, less momentum
+    // Close (<1.5 in): no minimum angle — let PD handle final approach gently
+    if (abs(error) > 3.0) {
+      if (error > 0) servoAngle = max(servoAngle, 170);
+      else           servoAngle = min(servoAngle, 40);
+    }
+    else if (abs(error) > 1.5) {
+      if (error > 0) servoAngle = max(servoAngle, 140);
+      else           servoAngle = min(servoAngle, 50);
+    }
+    else {
+      // ADDED: small minimum angle for close zone — just enough to beat friction
+      if (error > 0) servoAngle = max(servoAngle, 130);
+      else           servoAngle = min(servoAngle, 60);
+    }
+
+    servoAngle = constrain(servoAngle, 40, 175);
+
+    beamServo.write(servoAngle);
+
+    previousError = error;
+  }
+
+  Serial.print("S1: ");
+  Serial.print(sensor1);
+
+  Serial.print("  S2: ");
+  Serial.print(sensor2);
+
+  Serial.print("  Error: ");
+  Serial.print(error);
+
+  Serial.print("  Output: ");
+  Serial.print(output);
+
+  Serial.print("  Servo: ");
+  Serial.println(beamServo.read());
+}
