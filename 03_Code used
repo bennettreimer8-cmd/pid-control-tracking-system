@@ -1,6 +1,6 @@
 // PID constants
 float Kp = 12.0;
-float Ki = 0;
+float Ki = 0.01;
 float Kd = 16.0;
 
 // PID variables
